@@ -1,0 +1,19 @@
+[package]
+name = "rustmusic-engine"
+version = "0.1.0"
+edition = "2021"
+description = "RustMusic: FLAC engine, plays lossless files at their own sample rate and bit depth"
+license = "GPL-3.0-only"
+
+[features]
+default = ["cpal-out"]
+# Sound card output through cpal. Off for headless builds and tests.
+cpal-out = ["dep:cpal"]
+
+[dependencies]
+symphonia = { version = "0.5", default-features = false, features = ["flac"] }
+cpal = { version = "0.15", optional = true }
+
+[dev-dependencies]
+# Second FLAC decoder, only to check the engine's output against.
+claxon = "0.4"
