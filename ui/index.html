@@ -58,6 +58,15 @@
 </svg>
 
 <div id="backdrop"></div>
+<div id="drag" data-tauri-drag-region></div>
+<div id="winctl" role="group" aria-label="Kontrol jendela">
+  <button id="w-min" title="Perkecil" aria-label="Perkecil"><svg viewBox="0 0 14 14"><path d="M2 7H12"/></svg></button>
+  <button id="w-max" title="Perbesar" aria-label="Perbesar">
+    <svg class="mx" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2"/></svg>
+    <svg class="rs" viewBox="0 0 14 14"><rect x="2" y="4.25" width="7.75" height="7.75" rx="1.75"/><path d="M4.5 2H10.25C11.22 2 12 2.78 12 3.75V9.5"/></svg>
+  </button>
+  <button id="w-close" title="Tutup" aria-label="Tutup"><svg viewBox="0 0 14 14"><path d="M2.5 2.5L11.5 11.5M11.5 2.5L2.5 11.5"/></svg></button>
+</div>
 <div id="app">
   <aside id="side">
     <div class="panel">
@@ -114,6 +123,7 @@
 
   <section id="full" hidden aria-label="Sedang diputar">
     <div class="fbg" id="fbg"></div><div class="fshade"></div>
+    <div class="ftabs" role="tablist"><button id="tab-lirik" class="on" role="tab">Lirik</button><button id="tab-antrean" role="tab">Antrean</button></div>
     <button class="glassbtn" id="close-full" title="Tutup" aria-label="Tutup"><svg class="i"><use href="#i-chev-down"/></svg></button>
     <div class="fgrid">
       <div class="fleft">
@@ -132,7 +142,7 @@
         </div>
         <div class="fvol"><button class="ibtn" id="f-mute" title="Bisukan"><svg class="i"><use href="#i-volume"/></svg></button><input id="fvol" class="rng" type="range" min="0" max="100" value="80" aria-label="Volume"></div>
       </div>
-      <div class="fright"><div class="fq" id="f-queue"></div></div>
+      <div class="fright"><div class="fq" id="f-lyrics"></div><div class="fq" id="f-queue" hidden></div></div>
     </div>
   </section>
   <div id="toast" role="status"></div>
@@ -146,6 +156,18 @@
     <div class="acts">
       <button id="setup-retry" class="primary" hidden>Coba lagi</button>
       <button id="setup-skip" hidden>Lewati</button>
+    </div>
+  </div>
+</div>
+<div id="install" role="dialog" aria-labelledby="install-title" hidden>
+  <div class="card">
+    <img src="logo/app.png" alt="" width="72" height="72">
+    <h1 id="install-title">Setup RustMusic</h1>
+    <p id="install-msg">Pasang RustMusic di komputer ini dan buat shortcut.</p>
+    <div class="track" id="install-track" hidden><div id="install-bar" class="fill indet"></div></div>
+    <div class="acts">
+      <button id="install-go" class="primary">Setup</button>
+      <button id="install-skip">Jalankan tanpa pasang</button>
     </div>
   </div>
 </div>

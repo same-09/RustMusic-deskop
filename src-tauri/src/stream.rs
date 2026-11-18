@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
@@ -12,6 +14,29 @@ static YTDLP: Mutex<Option<PathBuf>> = Mutex::new(None);
 const DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 #[cfg(not(windows))]
 const DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
+
+/// Simpan URL audio hasil yt-dlp, supaya lagu yang sama tidak diminta lagi (yt-dlp lambat).
+static URL_CACHE: Mutex<Option<HashMap<String, (Instant, String)>>> = Mutex::new(None);
+const URL_TTL: Duration = Duration::from_secs(3 * 3600);
+
+fn url_get(id: &str) -> Option<String> {
+    let g = URL_CACHE.lock().ok()?;
+    let (t, u) = g.as_ref()?.get(id)?;
+    if t.elapsed() < URL_TTL { Some(u.clone()) } else { None }
+}
+
+fn url_put(id: &str, url: &str) {
+    if let Ok(mut g) = URL_CACHE.lock() {
+        let m = g.get_or_insert_with(HashMap::new);
+        if m.len() > 64 {
+            m.retain(|_, v| v.0.elapsed() < URL_TTL);
+            if m.len() > 64 {
+                m.clear();
+            }
+        }
+        m.insert(id.to_string(), (Instant::now(), url.to_string()));
+    }
+}
 
 fn cached() -> Option<PathBuf> {
     YTDLP.lock().ok().and_then(|g| g.clone())
@@ -161,8 +186,18 @@ pub async fn setup(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Minta yt-dlp untuk URL audio terbaik.
+/// URL audio terbaik: ambil dari cache kalau ada, kalau belum tanya yt-dlp.
 pub async fn audio_url(video_id: &str) -> Result<String, String> {
+    if let Some(u) = url_get(video_id) {
+        return Ok(u);
+    }
+    let u = audio_url_fresh(video_id).await?;
+    url_put(video_id, &u);
+    Ok(u)
+}
+
+/// Minta yt-dlp untuk URL audio terbaik (lambat, beberapa detik).
+async fn audio_url_fresh(video_id: &str) -> Result<String, String> {
     if !video_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return Err("id lagu tidak valid".into());
     }

@@ -113,22 +113,33 @@ async function loadCurrent() {
   const el = s.local ? localEl : streamEl;
   if (A !== el) A.pause();
   A = el;
+  playingId = "";
   refreshUi();
   try {
-    const slow = setTimeout(() => toast("Menyiapkan yt-dlp (sekali saja), tunggu sebentar..."), 3000);
+    const slow = setTimeout(() => toast("Memuat lagu, tunggu sebentar..."), 3000);
     let url;
     try { url = s.local ? s.url : await invoke("resolve", { videoId: s.id }); } finally { clearTimeout(slow); }
     if (tok !== loadTok) return;
     A.src = url;
+    playingId = s.id;
     A.volume = S.volume;
     if (s.local) ensureEq();
     await A.play();
     if (tok !== loadTok) return;
     noteHistory(s);
     refreshUi();
+    prefetchNext();
   } catch (e) {
     if (tok === loadTok) { toast("Gagal putar: " + (e && e.message ? e.message : e)); refreshUi(); }
   }
+}
+// Siapkan lagu berikutnya diam-diam, supaya pindah lagu langsung jalan.
+function prefetchNext() {
+  if (q.shuffle) return;
+  let j = q.i + 1;
+  if (j >= q.list.length) { if (q.repeat === "all") j = 0; else return; }
+  const n = q.list[j];
+  if (n && !n.local && n.id) invoke("prefetch", { videoId: n.id }).catch(() => {});
 }
 function playQueue(list, i) {
   q.list = list.slice();
@@ -173,6 +184,8 @@ function updateTime() {
   $("#f-all").textContent = fmt(A.duration);
   if (!dragging && ok) seeks().forEach((el) => (el.value = Math.round((A.currentTime / A.duration) * 1000)));
   seeks().forEach(fillRange);
+  ensureLyrics();
+  syncLyrics();
 }
 seeks().forEach((el) => {
   el.addEventListener("input", (e) => {
@@ -569,6 +582,7 @@ function renderFull() {
   $("#f-title").textContent = s ? s.title : "Belum ada lagu";
   $("#f-artist").textContent = s ? s.artist : "";
   $("#f-cover").innerHTML = s ? art(s) : `<span class="ph" style="${phStyle("x")}"></span>`;
+  if (s && lyrShown !== s.id) { lyrShown = s.id; applyLyrics({ state: "load", lines: [], synced: false }); }
   $("#fbg").style.setProperty("--fb", s && s.cover ? `url("${s.cover.replace(/["\\]/g, "")}")` : "none");
   const key = queueKey();
   $("#f-queue").innerHTML = q.list.map((x, i) => `<button class="ql${i === q.i ? " cur" : ""}" data-act="play" data-list="${key}" data-i="${i}" data-id="${esc(x.id)}"><b>${esc(x.title)}</b><small>${esc(x.artist)}</small></button>`).join("");
@@ -580,10 +594,88 @@ function renderFull() {
 }
 function openFull(on) {
   $("#full").hidden = !on;
-  if (on) { openPanel(false); fullId = ""; renderFull(); }
+  if (on) { openPanel(false); fullId = ""; lyrFor = ""; lyrShown = ""; renderFull(); ensureLyrics(); }
 }
 $("#open-full").onclick = () => openFull(true);
 $("#close-full").onclick = () => openFull(false);
+
+/* ---------- lirik (LRCLIB) di layar penuh ---------- */
+const lyr = { state: "load", lines: [], synced: false, idx: -1 };
+const lyrCache = new Map();
+let lyrFor = "", lyrShown = "", playingId = "", fullTab = "lirik";
+function parseLrc(txt) {
+  const out = [];
+  for (const raw of txt.split(/\r?\n/)) {
+    const re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+    const ts = [];
+    let m, last = 0;
+    while ((m = re.exec(raw))) { ts.push(+m[1] * 60 + parseFloat(m[2])); last = re.lastIndex; }
+    if (!ts.length) continue;
+    const text = raw.slice(last).trim();
+    ts.forEach((t) => out.push({ t, text }));
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function renderLyrics() {
+  const el = $("#f-lyrics");
+  if (lyr.state === "load") el.innerHTML = '<p class="lmsg">Memuat lirik...</p>';
+  else if (lyr.state === "none") el.innerHTML = '<p class="lmsg">Lirik tidak ditemukan.</p>';
+  else el.innerHTML = lyr.lines.map((l, i) => `<p class="ly${lyr.synced ? "" : " plain"}" data-i="${i}"${lyr.synced ? ` data-t="${l.t}"` : ""}>${l.text ? esc(l.text) : lyr.synced ? "♪" : ""}</p>`).join("");
+  lyr.idx = -1;
+  if (lyr.state === "ok" && !lyr.synced) el.scrollTop = 0;
+  syncLyrics(true);
+}
+function applyLyrics(r) { Object.assign(lyr, r); renderLyrics(); }
+function syncLyrics(force) {
+  if (!lyr.synced || lyr.state !== "ok" || $("#full").hidden || fullTab !== "lirik") return;
+  const t = A.currentTime + 0.25;
+  let lo = 0, hi = lyr.lines.length - 1, i = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (lyr.lines[mid].t <= t) { i = mid; lo = mid + 1; } else hi = mid - 1; }
+  if (i === lyr.idx && !force) return;
+  lyr.idx = i;
+  const ps = $$("#f-lyrics .ly");
+  ps.forEach((p, k) => p.classList.toggle("cur", k === i));
+  const c = ps[i] || ps[0];
+  if (c) c.scrollIntoView({ block: "center", behavior: force ? "auto" : "smooth" });
+}
+function ensureLyrics() {
+  if ($("#full").hidden) return;
+  const s = cur();
+  if (!s || playingId !== s.id || lyrFor === s.id) return;
+  if (!isFinite(A.duration) || A.duration <= 0) return;
+  lyrFor = s.id;
+  const id = s.id;
+  const hit = lyrCache.get(id);
+  if (hit) return applyLyrics(hit);
+  applyLyrics({ state: "load", lines: [], synced: false });
+  invoke("lyrics", { title: s.title, artist: s.artist, duration: A.duration })
+    .then((r) => {
+      let res = null;
+      if (r && r.synced) { const lines = parseLrc(r.synced); if (lines.length) res = { state: "ok", lines, synced: true }; }
+      if (!res && r && r.plain) res = { state: "ok", synced: false, lines: r.plain.split(/\r?\n/).map((text) => ({ t: 0, text: text.trim() })) };
+      res = res || { state: "none", lines: [], synced: false };
+      lyrCache.set(id, res);
+      if (cur() && cur().id === id) applyLyrics(res);
+    })
+    .catch(() => { if (cur() && cur().id === id) applyLyrics({ state: "none", lines: [], synced: false }); });
+}
+function setFullTab(t) {
+  fullTab = t;
+  $("#f-lyrics").hidden = t !== "lirik";
+  $("#f-queue").hidden = t !== "antrean";
+  $("#tab-lirik").classList.toggle("on", t === "lirik");
+  $("#tab-antrean").classList.toggle("on", t === "antrean");
+  if (t === "lirik") syncLyrics(true);
+  else { const c = $("#f-queue .cur"); if (c) c.scrollIntoView({ block: "center", behavior: "auto" }); }
+}
+$("#tab-lirik").onclick = () => setFullTab("lirik");
+$("#tab-antrean").onclick = () => setFullTab("antrean");
+$("#f-lyrics").addEventListener("click", (e) => {
+  const p = e.target.closest(".ly[data-t]");
+  if (!p) return;
+  A.currentTime = parseFloat(p.dataset.t);
+  syncLyrics(true);
+});
 $("#open-queue").onclick = () => openPanel($("#panel").hidden);
 $("#close-panel").onclick = () => openPanel(false);
 
@@ -755,4 +847,44 @@ async function runSetup() {
 }
 $("#setup-retry").onclick = runSetup;
 $("#setup-skip").onclick = () => { $("#setup").hidden = true; };
-runSetup();
+
+/* ---------- layar Setup: pasang app + shortcut (hanya bila exe belum terpasang) ---------- */
+async function startApp() {
+  let need = false;
+  try { need = await invoke("install_state"); } catch (e) { need = false; }
+  if (!need) return runSetup();
+  const box = $("#install"), msg = $("#install-msg"), go = $("#install-go"), skip = $("#install-skip");
+  const track = $("#install-track");
+  box.hidden = false;
+  skip.onclick = () => { box.hidden = true; runSetup(); };
+  go.onclick = async () => {
+    go.disabled = skip.disabled = true;
+    box.classList.remove("err");
+    track.hidden = false;
+    msg.textContent = "Memasang RustMusic dan membuat shortcut...";
+    try {
+      await invoke("install_app"); // sukses: app terpasang lalu terbuka sendiri, jendela ini menutup
+    } catch (e) {
+      track.hidden = true;
+      box.classList.add("err");
+      msg.textContent = "Setup gagal: " + (e && e.message ? e.message : e);
+      go.textContent = "Coba lagi";
+      go.disabled = skip.disabled = false;
+    }
+  };
+}
+startApp();
+
+/* ---------- top bar gaya Liner: kontrol jendela (jendela tanpa bingkai) ---------- */
+(function winControls() {
+  const T = window.__TAURI__;
+  const box = $("#winctl");
+  if (!T || !T.window || !T.window.getCurrentWindow) { box.hidden = true; $("#drag").hidden = true; return; }
+  const win = T.window.getCurrentWindow();
+  const sync = async () => { try { box.classList.toggle("maxed", await win.isMaximized()); } catch (e) {} };
+  $("#w-min").onclick = () => win.minimize();
+  $("#w-max").onclick = () => win.toggleMaximize();
+  $("#w-close").onclick = () => win.close();
+  try { win.onResized(sync); } catch (e) {}
+  sync();
+})();
