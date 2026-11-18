@@ -16,6 +16,7 @@ Tidak ada JVM, jadi start cepat.
 - `engine/`: mesin FLAC (crate `rustmusic-engine`). Putar lossless pada rate dan bit depth asli, mulai saat unduhan masih jalan, seek, dither 24 ke 16 bit bila kartu suara hanya 16 bit, volume lunak. Keluaran lewat trait `PcmOut`; `CpalOut` untuk kartu suara (shared mode).
 - `src-tauri/`: app Tauri. Perintah `setup` (event `setup-progress`), `search`, `resolve`, dan `flac_*` (event `flac-started`, `flac-ended`, `flac-error`). Jendela konsol disembunyikan di Windows, debug maupun release.
 - `ui/`: HTML + CSS + JS tanpa framework. `index.html` (kerangka + ikon), `style.css` (tema terang/gelap), `app.js` (layar, pemutar, ekualiser). Juga `i18n/` (35 bahasa, belum dipakai), `logo/`, `font/`.
+- Fitur di app: playlist buatan sendiri (disimpan di `localStorage`), unduhan offline (`offline.rs`, folder `%LOCALAPPDATA%\RustMusic\music`, diputar lewat protokol aset), halaman artis dan album (`browse`, `search_entries` di `innertube.rs`), Kenali musik (`recognize.rs`, mikrofon ke AudD, butuh token di Pengaturan), ikon tray, tombol media global, dan tutup-ke-tray (`desktop.rs`).
 - `assets/po_token.html`: halaman pembuat PO token dari app Android lama, untuk dipakai port Rust.
 
 ## Jalankan

@@ -49,7 +49,7 @@ fn remember(p: &PathBuf) {
 }
 
 /// Jangan munculkan jendela cmd hitam di Windows.
-fn quiet(cmd: &mut Command) -> &mut Command {
+pub(crate) fn quiet(cmd: &mut Command) -> &mut Command {
     #[cfg(windows)]
     {
         cmd.creation_flags(0x0800_0000);
@@ -65,7 +65,7 @@ async fn works(path: &OsStr) -> bool {
 }
 
 /// Folder data RustMusic: %LOCALAPPDATA%\RustMusic, atau folder app bila tidak ada.
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(|p| PathBuf::from(p).join("RustMusic"))
         .or_else(|| {
@@ -152,7 +152,7 @@ async fn ensure(progress: impl Fn(u64, Option<u64>)) -> Result<PathBuf, String> 
 }
 
 /// Dipakai saat putar lagu: kalau setup awal terlewat, tetap unduh diam-diam.
-async fn ytdlp() -> Result<PathBuf, String> {
+pub(crate) async fn ytdlp() -> Result<PathBuf, String> {
     ensure(|_, _| {}).await
 }
 
@@ -191,9 +191,30 @@ pub async fn audio_url(video_id: &str) -> Result<String, String> {
     if let Some(u) = url_get(video_id) {
         return Ok(u);
     }
+    check_id(video_id)?;
+    // Jalur cepat: Innertube langsung. Kalau gagal, baru yt-dlp.
+    let u = match crate::innertube::audio_url(video_id).await {
+        Ok(u) => u,
+        Err(_) => audio_url_fresh(video_id).await?,
+    };
+    url_put(video_id, &u);
+    Ok(u)
+}
+
+/// Paksa yt-dlp (dipakai UI kalau URL Innertube gagal diputar).
+pub async fn audio_url_slow(video_id: &str) -> Result<String, String> {
+    check_id(video_id)?;
     let u = audio_url_fresh(video_id).await?;
     url_put(video_id, &u);
     Ok(u)
+}
+
+fn check_id(video_id: &str) -> Result<(), String> {
+    if video_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        Ok(())
+    } else {
+        Err("id lagu tidak valid".into())
+    }
 }
 
 /// Minta yt-dlp untuk URL audio terbaik (lambat, beberapa detik).
