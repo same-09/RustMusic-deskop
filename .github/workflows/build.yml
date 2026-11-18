@@ -1,0 +1,34 @@
+name: Build EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # custom-protocol = UI (folder ui/) ditanam ke dalam exe
+      - name: Build release exe
+        run: cargo build --release -p rustmusic --features tauri/custom-protocol
+
+      - name: Siapkan exe
+        shell: pwsh
+        run: Copy-Item target/release/rustmusic.exe RustMusic.exe
+
+      - name: Upload ke Release (exe langsung, bukan zip)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
+          name: RustMusic ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
+          files: RustMusic.exe
