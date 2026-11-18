@@ -370,16 +370,13 @@ input[type=checkbox] { accent-color: var(--text-primary); }
 #setup img { border-radius: 18px; box-shadow: var(--shadow); }
 #setup h1 { margin: 4px 0 0; font-size: 20px; font-weight: 700; color: var(--text-primary); }
 #setup p { margin: 0; font-size: 13px; color: var(--text-secondary); min-height: 1.4em; }
-#setup .track { width: 100%; height: 6px; border-radius: 99px; background: var(--fill-strong); overflow: hidden; }
-#setup .fill { height: 100%; width: 0; border-radius: 99px; background: var(--accent-primary); transition: width .15s linear; }
-#setup .fill.indet { width: 35%; animation: setup-slide 1.1s var(--ease) infinite; }
 @keyframes setup-slide { from { margin-left: -35%; } to { margin-left: 100%; } }
 #setup .acts { display: flex; gap: 10px; min-height: 36px; }
 #setup .acts button { border: 0; border-radius: var(--r-btn); padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--fill-hover); color: var(--text-primary); }
 #setup .acts button.primary { background: var(--btn-bg); color: var(--btn-text); }
 #setup .acts button[hidden] { display: none; }
 #setup.err p { color: var(--accent-primary); }
-#setup.err .track { display: none; }
+#setup.err .dotw { display: none; }
 /* ---------- layar Setup (pasang app) ---------- */
 #install { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--bg-primary); }
 #install[hidden] { display: none; }
@@ -387,16 +384,13 @@ input[type=checkbox] { accent-color: var(--text-primary); }
 #install img { border-radius: 18px; box-shadow: var(--shadow); }
 #install h1 { margin: 4px 0 0; font-size: 20px; font-weight: 700; color: var(--text-primary); }
 #install p { margin: 0; font-size: 13px; color: var(--text-secondary); min-height: 1.4em; }
-#install .track { width: 100%; height: 6px; border-radius: 99px; background: var(--fill-strong); overflow: hidden; }
-#install .fill { height: 100%; width: 0; border-radius: 99px; background: var(--accent-primary); transition: width .15s linear; }
-#install .fill.indet { width: 35%; animation: setup-slide 1.1s var(--ease) infinite; }
 #install .acts { display: flex; gap: 10px; min-height: 36px; }
 #install .acts button { border: 0; border-radius: var(--r-btn); padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--fill-hover); color: var(--text-primary); }
 #install .acts button.primary { background: var(--btn-bg); color: var(--btn-text); }
 #install .acts button[hidden] { display: none; }
 #install.err p { color: var(--accent-primary); }
-#install.err .track { display: none; }
-#install .track[hidden] { display: none; }
+#install.err .dotw { display: none; }
+#install .dotw[hidden] { display: none; }
 
 
 /* ---------- top bar gaya Liner: jendela tanpa bingkai + kapsul kontrol di kanan atas ---------- */
@@ -447,3 +441,33 @@ input[type=checkbox] { accent-color: var(--text-primary); }
 #dlg h2 { margin: 0; font-size: 18px; }
 #dlg .field { width: 100%; height: 40px; }
 #dlg .acts { justify-content: flex-end; margin: 0; }
+
+/* ---------- progress titik gaya Ruststrap: titik menyala acak sesuai kemajuan, gelombang saat menunggu ---------- */
+.dotw { display: grid; justify-items: center; margin: 6px 0; }
+.dotw[hidden] { display: none; }
+.dots { --dim: color-mix(in srgb, var(--text-primary) 18%, transparent); --lit: var(--text-primary); display: grid; grid-template-columns: repeat(var(--cols), var(--ds)); gap: var(--dg); width: max-content; max-width: 100%; }
+.dots .d { display: block; width: var(--ds); height: var(--ds); border-radius: 50%; background: var(--dim); transition: background .35s, box-shadow .35s, transform .35s; }
+.dots .d.on { background: var(--lit); box-shadow: 0 0 calc(var(--ds) * .9) color-mix(in srgb, var(--lit) 35%, transparent); }
+.dots .d.next { animation: dotPulse .9s ease-in-out infinite alternate; }
+.dots.ind .d { animation: dotWave 1.5s ease-in-out infinite; animation-delay: var(--w); }
+@keyframes dotPulse { from { background: var(--dim); } to { background: color-mix(in srgb, var(--lit) 75%, transparent); } }
+@keyframes dotWave {
+  0%, 100% { background: var(--dim); box-shadow: none; transform: scale(.8); }
+  50% { background: var(--lit); box-shadow: 0 0 calc(var(--ds) * .9) color-mix(in srgb, var(--lit) 35%, transparent); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .dots.ind .d, .dots .d.next { animation: none; } }
+
+/* ---------- dialog update dalam app ---------- */
+#update { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; background: color-mix(in srgb, var(--bg-primary) 92%, transparent); backdrop-filter: blur(6px); }
+#update[hidden] { display: none; }
+#update .card { width: min(400px, 88vw); display: grid; justify-items: center; gap: 14px; text-align: center; background: none; }
+#update img { border-radius: 18px; box-shadow: var(--shadow); }
+#update h1 { margin: 4px 0 0; font-size: 20px; font-weight: 700; color: var(--text-primary); }
+#update p { margin: 0; font-size: 13px; color: var(--text-secondary); min-height: 1.4em; }
+#update pre { margin: 0; width: 100%; max-height: 140px; overflow: auto; text-align: left; white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); background: var(--fill); border-radius: 12px; padding: 10px 12px; }
+#update pre[hidden] { display: none; }
+#update .acts { display: flex; gap: 10px; min-height: 36px; }
+#update .acts button { border: 0; border-radius: var(--r-btn); padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--fill-hover); color: var(--text-primary); }
+#update .acts button.primary { background: var(--btn-bg); color: var(--btn-text); }
+#update .acts button:disabled { opacity: .5; cursor: default; }
+#update.err p { color: var(--accent-primary); }

@@ -18,6 +18,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Versi app (dipakai cek update) disamakan dengan tag rilis, mis. v0.2.0 -> 0.2.0
+      - name: Samakan versi dengan tag
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          (Get-Content src-tauri/Cargo.toml) -replace '^version = ".*"', "version = `"$v`"" | Set-Content src-tauri/Cargo.toml
+          (Get-Content src-tauri/tauri.conf.json) -replace '"version": ".*?"', "`"version`": `"$v`"" | Set-Content src-tauri/tauri.conf.json
+
       # custom-protocol = UI (folder ui/) ditanam ke dalam exe
       - name: Build release exe
         run: cargo build --release -p rustmusic --features tauri/custom-protocol

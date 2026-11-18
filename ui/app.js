@@ -37,6 +37,9 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
 }
 
+let APP_VERSION = "0.1.0";
+invoke("app_version").then((v) => { APP_VERSION = v; }).catch(() => {});
+
 /* ---------- store ---------- */
 const KEY = "rustmusic:v1";
 const defaults = () => ({ liked: [], history: [], plays: {}, days: [], theme: "auto", eq: { on: false, gains: Array(10).fill(0) }, volume: 0.8, playlists: [], downloads: [], closeToTray: true, mediaKeys: true, audd: "" });
@@ -830,11 +833,11 @@ const views = {
         <div class="item">${icon("volume")}<span class="grow">Tombol media global<small>Putar/jeda, berikutnya, sebelumnya di keyboard, juga saat jendela tidak fokus.</small></span><input type="checkbox" id="set-media" ${S.mediaKeys ? "checked" : ""}></div></div>
       <div class="card group"><div class="item">${icon("mic")}<span class="grow">Token AudD<small>Untuk Kenali musik. Daftar di dashboard.audd.io. Disimpan di komputer ini.</small></span><label class="field" style="width:220px"><input id="audd" type="password" placeholder="Token API" autocomplete="off" spellcheck="false" value="${esc(S.audd)}"></label></div></div>
       <div class="card group">${item("trash", "Hapus riwayat", "Riwayat, statistik, dan apimu", `data-act="clear-history"`)}${item("trash", "Hapus semua data lokal", "Riwayat, lagu disukai, playlist, pengaturan. Unduhan tetap ada.", `data-act="clear-all"`)}</div>
-      <div class="card group">${item("info", "Tentang", "", `data-act="go" data-to="tentang"`)}</div>`;
+      <div class="card group">${item("download", "Cek update", `RustMusic ${APP_VERSION}. Update langsung di app, tanpa browser.`, `data-act="check-update"`)}${item("info", "Tentang", "", `data-act="go" data-to="tentang"`)}</div>`;
   },
 
   tentang() {
-    return `<h1>Tentang</h1><div class="card" style="padding:22px;max-width:640px;line-height:1.6"><b style="font-size:20px">RustMusic 0.1.0</b><p class="muted">Pemutar musik Windows untuk YouTube Music. Gratis, open source (GPL-3.0). Fork dari OpenTune.</p>
+    return `<h1>Tentang</h1><div class="card" style="padding:22px;max-width:640px;line-height:1.6"><b style="font-size:20px">RustMusic ${APP_VERSION}</b><p class="muted">Pemutar musik Windows untuk YouTube Music. Gratis, open source (GPL-3.0). Fork dari OpenTune.</p>
       <p>Mesin FLAC lossless ditulis dengan Rust dan memutar pada sample rate serta bit depth asli file.</p></div>`;
   },
 };
@@ -1104,6 +1107,7 @@ document.addEventListener("click", (e) => {
     case "like": e.stopPropagation(); toggleLike(songs.get(d.id)); break;
     case "menu": e.stopPropagation(); { const s = songs.get(d.id); if (s) openMenu(el, s); } break;
     case "go": go(d.to, d.arg, !!d.root); break;
+    case "check-update": toast("Memeriksa update..."); checkUpdate(true); break;
     case "search": doSearch(d.q); break;
     case "tab": search.tab = d.tab; rerender(); break;
     case "libtab": libTab = d.tab; rerender(); break;
@@ -1244,15 +1248,58 @@ refreshUi();
 applyDesktopPrefs();
 syncDownloads();
 
+/* ---------- progress titik gaya Ruststrap ---------- */
+// set(null) = menunggu (gelombang). set(0..1) = titik menyala acak sesuai kemajuan.
+function DotProgress(root, o = {}) {
+  const cols = o.cols || 12, rows = o.rows || 6, n = cols * rows;
+  const el = document.createElement("div");
+  el.className = "dots";
+  el.style.setProperty("--cols", cols);
+  el.style.setProperty("--ds", (o.size || 10) + "px");
+  el.style.setProperty("--dg", (o.gap || 14) + "px");
+  // Urutan acak yang sama tiap kali: titik i menyala saat kemajuan lewat rank[i].
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const order = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const rank = new Array(n);
+  order.forEach((idx, r) => (rank[idx] = r));
+  const dots = [];
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement("i");
+    d.className = "d";
+    d.style.setProperty("--w", (((i % cols) + Math.floor(i / cols)) * 0.07).toFixed(2) + "s");
+    dots.push(d);
+    el.append(d);
+  }
+  el.set = (f) => {
+    if (f == null) { el.classList.add("ind"); dots.forEach((d) => d.classList.remove("on", "next")); return el; }
+    el.classList.remove("ind");
+    f = Math.max(0, Math.min(1, f));
+    const lit = Math.floor(f * n + 1e-9);
+    dots.forEach((d, i) => {
+      const r = rank[i];
+      d.classList.toggle("on", r < lit);
+      d.classList.toggle("next", f < 1 && r >= lit && r < lit + 3);
+    });
+    return el;
+  };
+  el.set(null);
+  root.append(el);
+  return el;
+}
+const setupDots = DotProgress($("#setup-dots"));
+const installDots = DotProgress($("#install-dots"));
+const updateDots = DotProgress($("#update-dots"));
+
 /* ---------- setup awal: pastikan yt-dlp ada, unduh bila belum ---------- */
 async function runSetup() {
-  const box = $("#setup"), bar = $("#setup-bar"), msg = $("#setup-msg");
+  const box = $("#setup"), msg = $("#setup-msg");
   const retry = $("#setup-retry"), skip = $("#setup-skip");
   const mb = (n) => (n / 1048576).toFixed(1);
   retry.hidden = skip.hidden = true;
   box.classList.remove("err");
-  bar.classList.add("indet");
-  bar.style.width = "";
+  setupDots.set(null);
   msg.textContent = "Memeriksa yt-dlp...";
   let off = () => {};
   const ev = window.__TAURI__ && window.__TAURI__.event;
@@ -1261,8 +1308,7 @@ async function runSetup() {
       const p = e.payload;
       if (p.stage !== "unduh") return;
       const known = p.total > 0;
-      bar.classList.toggle("indet", !known);
-      bar.style.width = known ? Math.min(100, (p.done / p.total) * 100) + "%" : "";
+      setupDots.set(known ? p.done / p.total : null);
       msg.textContent = known
         ? `Mengunduh yt-dlp (sekali saja)... ${mb(p.done)} / ${mb(p.total)} MB`
         : `Mengunduh yt-dlp (sekali saja)... ${mb(p.done)} MB`;
@@ -1287,19 +1333,86 @@ async function runSetup() {
 $("#setup-retry").onclick = runSetup;
 $("#setup-skip").onclick = () => { $("#setup").hidden = true; };
 
+/* ---------- update dalam app: rilis GitHub same-09/RustMusic-deskop, tanpa browser ---------- */
+let upd = null, updDismissed = "", updBusy = false;
+const updBox = $("#update"), updMsg = $("#update-msg"), updNotes = $("#update-notes");
+const updWrap = $("#update-wrap"), updGo = $("#update-go"), updLater = $("#update-later");
+function showUpdate(info) {
+  upd = info;
+  updBox.classList.remove("err");
+  $("#update-title").textContent = `RustMusic ${info.version} tersedia`;
+  updMsg.textContent = `Kamu memakai versi ${APP_VERSION}. Update langsung di app, tanpa browser.`;
+  const notes = (info.notes || "").slice(0, 800);
+  updNotes.textContent = notes;
+  updNotes.hidden = !notes;
+  updWrap.hidden = true;
+  updGo.textContent = "Update sekarang";
+  updGo.disabled = updLater.disabled = false;
+  updBox.hidden = false;
+}
+async function checkUpdate(manual = false) {
+  if (updBusy) return;
+  try {
+    const info = await invoke("check_update");
+    if (!info) { if (manual) toast("RustMusic sudah versi terbaru"); return; }
+    if (!manual && info.tag === updDismissed) return;
+    showUpdate(info);
+  } catch (e) {
+    if (manual) toast(errMsg(e));
+  }
+}
+updLater.onclick = () => { if (upd) updDismissed = upd.tag; updBox.hidden = true; };
+updGo.onclick = async () => {
+  if (!upd || updBusy) return;
+  const mb = (n) => (n / 1048576).toFixed(1);
+  updBusy = true;
+  updGo.disabled = updLater.disabled = true;
+  updBox.classList.remove("err");
+  updWrap.hidden = false;
+  updateDots.set(null);
+  updMsg.textContent = `Mengunduh RustMusic ${upd.version}...`;
+  let off = () => {};
+  const ev = window.__TAURI__ && window.__TAURI__.event;
+  if (ev) {
+    off = await ev.listen("update-progress", (e) => {
+      const p = e.payload, known = p.total > 0;
+      updateDots.set(known ? p.done / p.total : null);
+      updMsg.textContent = known
+        ? `Mengunduh RustMusic ${upd.version}... ${mb(p.done)} / ${mb(p.total)} MB`
+        : `Mengunduh RustMusic ${upd.version}... ${mb(p.done)} MB`;
+    });
+  }
+  try {
+    await invoke("apply_update", { url: upd.url }); // sukses: app keluar lalu terbuka lagi versi baru
+    updMsg.textContent = "Memasang update, RustMusic dibuka ulang...";
+    updateDots.set(null);
+  } catch (e) {
+    updWrap.hidden = true;
+    updBox.classList.add("err");
+    updMsg.textContent = "Update gagal: " + errMsg(e);
+    updGo.textContent = "Coba lagi";
+    updGo.disabled = updLater.disabled = false;
+  } finally {
+    off();
+    updBusy = false;
+  }
+};
+setInterval(() => checkUpdate(), 6 * 60 * 60 * 1000);
+
 /* ---------- layar Setup: pasang app + shortcut (hanya bila exe belum terpasang) ---------- */
 async function startApp() {
   let need = false;
   try { need = await invoke("install_state"); } catch (e) { need = false; }
-  if (!need) return runSetup();
+  if (!need) { await runSetup(); setTimeout(() => checkUpdate(), 1000); return; }
   const box = $("#install"), msg = $("#install-msg"), go = $("#install-go"), skip = $("#install-skip");
   const track = $("#install-track");
   box.hidden = false;
-  skip.onclick = () => { box.hidden = true; runSetup(); };
+  skip.onclick = async () => { box.hidden = true; await runSetup(); setTimeout(() => checkUpdate(), 1000); };
   go.onclick = async () => {
     go.disabled = skip.disabled = true;
     box.classList.remove("err");
     track.hidden = false;
+    installDots.set(null);
     msg.textContent = "Memasang RustMusic dan membuat shortcut...";
     try {
       await invoke("install_app"); // sukses: app terpasang lalu terbuka sendiri, jendela ini menutup

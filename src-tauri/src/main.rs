@@ -10,6 +10,7 @@ mod offline;
 mod player;
 mod recognize;
 mod stream;
+mod update;
 
 use tauri::Manager;
 
@@ -18,6 +19,7 @@ fn main() {
         install::uninstall();
         return;
     }
+    update::cleanup();
     tauri::Builder::default()
         .plugin(desktop::media_plugin())
         .manage(player::Player::default())
@@ -48,6 +50,9 @@ fn main() {
             stream::setup,
             install::install_state,
             install::install_app,
+            update::app_version,
+            update::check_update,
+            update::apply_update,
             player::flac_play,
             player::flac_pause,
             player::flac_resume,

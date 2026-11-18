@@ -153,7 +153,7 @@
     <img src="logo/app.png" alt="" width="72" height="72">
     <h1 id="setup-title">Menyiapkan RustMusic</h1>
     <p id="setup-msg">Memeriksa yt-dlp...</p>
-    <div class="track"><div id="setup-bar" class="fill indet"></div></div>
+    <div class="dotw"><div id="setup-dots"></div></div>
     <div class="acts">
       <button id="setup-retry" class="primary" hidden>Coba lagi</button>
       <button id="setup-skip" hidden>Lewati</button>
@@ -165,7 +165,7 @@
     <img src="logo/app.png" alt="" width="72" height="72">
     <h1 id="install-title">Setup RustMusic</h1>
     <p id="install-msg">Pasang RustMusic di komputer ini dan buat shortcut.</p>
-    <div class="track" id="install-track" hidden><div id="install-bar" class="fill indet"></div></div>
+    <div class="dotw" id="install-track" hidden><div id="install-dots"></div></div>
     <div class="acts">
       <button id="install-go" class="primary">Setup</button>
       <button id="install-skip">Jalankan tanpa pasang</button>
@@ -177,6 +177,19 @@
     <h2 id="dlg-title">Playlist baru</h2>
     <label class="field"><input id="dlg-input" maxlength="60" placeholder="Nama playlist" autocomplete="off" spellcheck="false"></label>
     <div class="acts"><button id="dlg-cancel" class="btn soft">Batal</button><button id="dlg-ok" class="btn">Buat</button></div>
+  </div>
+</div>
+<div id="update" role="dialog" aria-labelledby="update-title" hidden>
+  <div class="card">
+    <img src="logo/app.png" alt="" width="72" height="72">
+    <h1 id="update-title">Update tersedia</h1>
+    <p id="update-msg"></p>
+    <pre id="update-notes" hidden></pre>
+    <div class="dotw" id="update-wrap" hidden><div id="update-dots"></div></div>
+    <div class="acts">
+      <button id="update-go" class="primary">Update sekarang</button>
+      <button id="update-later">Nanti</button>
+    </div>
   </div>
 </div>
 <input type="file" id="files" multiple accept="audio/*" hidden>
