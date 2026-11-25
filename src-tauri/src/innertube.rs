@@ -109,33 +109,93 @@ pub async fn search_entries(query: &str, kind: Kind) -> Result<Vec<Entry>, Strin
 const PLAYER_URL: &str = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 const VR_UA: &str = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
 
-/// URL audio langsung lewat Innertube (klien ANDROID_VR, tanpa yt-dlp). Cepat: satu request.
-pub async fn audio_url(video_id: &str) -> Result<String, String> {
-    let body = json!({
-        "context": { "client": {
-            "clientName": "ANDROID_VR",
-            "clientVersion": "1.60.19",
-            "deviceMake": "Oculus",
-            "deviceModel": "Quest 3",
-            "androidSdkVersion": 32,
-            "osName": "Android",
-            "osVersion": "12L",
-            "hl": "en"
-        }},
+/// Satu klien Innertube yang bisa kasih URL audio langsung (tanpa signatureCipher).
+struct PlayerClient {
+    /// Nilai header X-YouTube-Client-Name.
+    id: &'static str,
+    version: &'static str,
+    ua: &'static str,
+    /// Isi `context.client` di body request.
+    ctx: fn() -> Value,
+    /// Kirim `playbackContext` (html5Preference), seperti klien IOS resmi.
+    html5: bool,
+}
+
+fn ctx_vr() -> Value {
+    json!({
+        "clientName": "ANDROID_VR", "clientVersion": "1.60.19",
+        "deviceMake": "Oculus", "deviceModel": "Quest 3",
+        "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L", "hl": "en"
+    })
+}
+
+const IOS_VERSION: &str = "21.03.38";
+const IOS_UA: &str = "com.google.ios.youtube/21.03.38 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)";
+
+fn ctx_ios() -> Value {
+    json!({
+        "clientName": "IOS", "clientVersion": IOS_VERSION,
+        "deviceMake": "Apple", "deviceModel": "iPhone16,2",
+        "osName": "iPhone", "osVersion": "18.1.0.22B83", "hl": "en",
+        "userAgent": IOS_UA
+    })
+}
+
+fn ctx_tv() -> Value {
+    json!({ "clientName": "TVHTML5", "clientVersion": "7.20250219.14.00", "hl": "en" })
+}
+
+/// Urutan coba. Yang pertama jalan langsung, sisanya menyusul bila belum ada hasil.
+static CLIENTS: [PlayerClient; 3] = [
+    PlayerClient { id: "28", version: "1.60.19", ua: VR_UA, ctx: ctx_vr, html5: false },
+    PlayerClient {
+        id: "5",
+        version: IOS_VERSION,
+        ua: IOS_UA,
+        ctx: ctx_ios,
+        html5: true,
+    },
+    PlayerClient {
+        id: "7",
+        version: "7.20250219.14.00",
+        ua: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        ctx: ctx_tv,
+        html5: false,
+    },
+];
+
+/// Jeda sebelum klien berikutnya ikut jalan (klien ke-i mulai setelah i x jeda ini).
+const STAGGER: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Satu client HTTP dipakai terus, jadi jabat tangan TLS tidak diulang tiap lagu.
+fn http() -> &'static reqwest::Client {
+    static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+async fn player_request(c: &PlayerClient, video_id: &str) -> Result<String, String> {
+    let mut body = json!({
+        "context": { "client": (c.ctx)() },
         "videoId": video_id,
         "contentCheckOk": true,
         "racyCheckOk": true
     });
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let res: Value = client
+    if c.html5 {
+        body["playbackContext"] = json!({
+            "contentPlaybackContext": { "html5Preference": "HTML5_PREF_WANTS" }
+        });
+    }
+    let res: Value = http()
         .post(PLAYER_URL)
-        .header("User-Agent", VR_UA)
-        .header("X-YouTube-Client-Name", "28")
-        .header("X-YouTube-Client-Version", "1.60.19")
+        .header("User-Agent", c.ua)
+        .header("X-YouTube-Client-Name", c.id)
+        .header("X-YouTube-Client-Version", c.version)
         .json(&body)
         .send()
         .await
@@ -144,6 +204,33 @@ pub async fn audio_url(video_id: &str) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
     parse_audio_url(&res)
+}
+
+/// URL audio langsung lewat Innertube, tanpa yt-dlp. Klien jalan berurutan dengan jeda kecil
+/// dan saling balapan: yang pertama dapat URL menang, sisanya dibatalkan.
+pub async fn audio_url(video_id: &str) -> Result<String, String> {
+    let mut set = tokio::task::JoinSet::new();
+    for (i, c) in CLIENTS.iter().enumerate() {
+        let vid = video_id.to_string();
+        set.spawn(async move {
+            if i > 0 {
+                tokio::time::sleep(STAGGER * i as u32).await;
+            }
+            player_request(c, &vid).await
+        });
+    }
+    let mut last = String::from("innertube: tidak ada klien yang jalan");
+    while let Some(done) = set.join_next().await {
+        match done {
+            Ok(Ok(url)) => {
+                set.abort_all();
+                return Ok(url);
+            }
+            Ok(Err(e)) => last = e,
+            Err(_) => {}
+        }
+    }
+    Err(last)
 }
 
 /// Pilih audio dengan bitrate tertinggi yang punya URL langsung (tanpa signatureCipher).
@@ -469,6 +556,22 @@ mod tests {
             ]}
         });
         assert_eq!(parse_audio_url(&data), Ok("besar".to_string()));
+    }
+
+    #[test]
+    fn clients_are_distinct_and_vr_first() {
+        assert_eq!(CLIENTS[0].id, "28");
+        let mut ids: Vec<_> = CLIENTS.iter().map(|c| c.id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), CLIENTS.len());
+        for c in CLIENTS.iter() {
+            assert!((c.ctx)().get("clientName").is_some());
+        }
+        // Versi di header harus sama dengan versi di body.
+        let ios = CLIENTS.iter().find(|c| c.id == "5").unwrap();
+        assert_eq!((ios.ctx)()["clientVersion"], ios.version);
+        assert!(ios.html5);
     }
 
     #[test]

@@ -221,7 +221,7 @@ const deviceSongs = [];
 const streamEl = new Audio();
 const localEl = new Audio();
 let A = streamEl;
-const q = { list: [], i: -1, shuffle: false, repeat: "off" };
+const q = { list: [], i: -1, nx: null, shuffle: false, repeat: "off" };
 let loadTok = 0;
 let dragging = false;
 const cur = () => q.list[q.i];
@@ -275,24 +275,51 @@ async function loadCurrent() {
 }
 // Siapkan lagu berikutnya diam-diam, supaya pindah lagu langsung jalan.
 function prefetchNext() {
-  if (q.shuffle) return;
-  let j = q.i + 1;
-  if (j >= q.list.length) { if (q.repeat === "all") j = 0; else return; }
+  let j;
+  if (q.shuffle) {
+    if (q.list.length < 2) return;
+    j = pickShuffle();
+  } else {
+    j = q.i + 1;
+    if (j >= q.list.length) { if (q.repeat === "all") j = 0; else return; }
+  }
   const n = q.list[j];
   if (n && !n.local && n.id && !isDl(n.id)) invoke("prefetch", { videoId: n.id }).catch(() => {});
 }
+// Lagu acak berikutnya dipilih lebih awal, supaya bisa disiapkan dulu.
+function pickShuffle() {
+  if (q.nx == null || q.nx === q.i || q.nx >= q.list.length) {
+    do { q.nx = Math.floor(Math.random() * q.list.length); } while (q.nx === q.i);
+  }
+  return q.nx;
+}
+// Kursor di atas lagu: siapkan URL diam-diam. Tunggu 150 ms supaya lewat sekilas tidak ikut.
+let hoverT = 0, hoverId = "";
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest && e.target.closest('[data-act="play"][data-id]');
+  const id = el ? el.dataset.id : "";
+  if (id === hoverId) return;
+  hoverId = id;
+  clearTimeout(hoverT);
+  if (!id) return;
+  hoverT = setTimeout(() => {
+    const s = songs.get(id);
+    if ((s && s.local) || isDl(id) || (cur() && cur().id === id)) return;
+    invoke("prefetch", { videoId: id }).catch(() => {});
+  }, 150);
+});
 function playQueue(list, i) {
   q.list = list.slice();
   q.i = i;
+  q.nx = null;
   q.list.forEach((s) => songs.set(s.id, s));
   loadCurrent();
 }
 function step(dir) {
   if (!q.list.length) return;
   if (q.shuffle && q.list.length > 1) {
-    let j;
-    do { j = Math.floor(Math.random() * q.list.length); } while (j === q.i);
-    q.i = j;
+    q.i = pickShuffle();
+    q.nx = null;
   } else {
     let j = q.i + dir;
     if (j >= q.list.length) { if (q.repeat === "all") j = 0; else return stopAtEnd(); }
